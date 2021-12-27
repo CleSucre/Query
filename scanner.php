@@ -59,7 +59,7 @@ while ($info === null) {
 $ports = $maxPort - $minPort;
 echo "Scanning " . $ports . " ports on server " . gethostbyname($address) . "\nEstimated time: " . gmdate("H:i:s", $ports) . "\n";
 $servers = 0;
-for ($i=$minPort; $i<$maxPort; $i++) {
+for ($i=$minPort; $i<$maxPort; $i++) { //TODO: multi threads
     $result = query($address, $i);
     if (!$result)
         continue;
