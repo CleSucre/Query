@@ -1,107 +1,149 @@
 <?php
 
-const DEBUG = 0;
+class Query {
+    /** @var string[]|null|string */
+    private array|null|string $server;
 
-if (!function_exists('readline')) {
-    function readline($question) {
-        $fh = fopen('php://stdin', 'r');
-        echo $question;
-        $userInput = trim(fgets($fh));
-        fclose($fh);
-        return $userInput;
+    /** @var string[] */
+    private array $fetchedData;
+
+    public function __construct($host = "", $port = 19132) {
+        $this->server = $this->UT3Query($host, $port);
+        if ($this->server === null) {
+            return;
+        }
+
+        $this->fetchedData = [
+            "hostname" => $this->server['hostname'],
+            "gametype" => $this->server['gametype'],
+            "game_id" => $this->server['game_id'],
+            "version" => $this->server['version'],
+            "server_engine" => $this->server['server_engine'],
+            "plugins" => explode(";", explode(":", $this->server['plugins'])[1]), //remove server software name
+            "map" => $this->server['map'],
+            "numplayers" => $this->server['numplayers'],
+            "maxplayers" => $this->server['maxplayers'],
+            "whitelist" => $this->server['whitelist'] == "on",
+            "hostip" => $this->server['hostip'],
+            "hostport" => $this->server['hostport'],
+            "players" => $this->server['players'],
+        ];
+    }
+
+    public function putServer(string $host = "localhost", int $port = 19132) : self {
+        $this->server = $this->UT3Query($host, $port);
+
+        return $this;
+    }
+
+    public function isOnline() : bool {
+        return $this->server !== null;
+    }
+
+    /**
+     * @return string[]
+     */
+    public function getAll() : array {
+        return $this->fetchedData;
+    }
+
+    public function getHostname() : string {
+        return $this->fetchedData['hostname'];
+    }
+
+    public function getGametype() : string {
+        return $this->fetchedData['gametype'];
+    }
+
+    public function getGameId() : string {
+        return $this->fetchedData['game_id'];
+    }
+
+    public function getVersion() : string {
+        return $this->fetchedData['version'];
+    }
+
+    public function getServerEngine() : string {
+        return $this->fetchedData['server_engine'];
+    }
+
+    /**
+     * @return string[]
+     */
+    public function getPlugins() : array {
+        return $this->fetchedData['plugins'];
+    }
+
+    public function getMap() : string {
+        return $this->fetchedData['map'];
+    }
+
+    public function getNumplayers() : int {
+        return $this->fetchedData['numplayers'];
+    }
+
+    public function getMaxplayers() : int {
+        return $this->fetchedData['maxplayers'];
+    }
+
+    public function getWhitelist() : bool {
+        return $this->fetchedData['whitelist'];
+    }
+
+    public function getHostip() : string {
+        return $this->fetchedData['hostip'];
+    }
+
+    public function getHostport() : string {
+        return $this->fetchedData['hostport'];
+    }
+
+    /**
+     * @return string[]
+     */
+    public function getPlayers() : array {
+        return $this->fetchedData['players'];
+    }
+
+    private function UT3Query(string $host, int $port) : array|null|string {
+        $socket = @fsockopen("udp://" . $host, $port);
+        if (!$socket) {
+            return null;
+        }
+        if (!@fwrite($socket, "\xFE\xFD\x09\x10\x20\x30\x40\xFF\xFF\xFF\x01")) {
+            return null;
+        }
+        $challenge = @fread($socket, 1400);
+        if (!$challenge) {
+            return null;
+        }
+        $challenge = substr(preg_replace("/[^0-9-]/si", "", $challenge), 1);
+        $query = sprintf(
+            "\xFE\xFD\x00\x10\x20\x30\x40%c%c%c%c\xFF\xFF\xFF\x01",
+            $challenge >> 24,
+            $challenge >> 16,
+            $challenge >> 8,
+            $challenge >> 0
+        );
+        if (!@fwrite($socket, $query)) {
+            return null;
+        }
+        $response = [];
+        $response[] = @fread($socket, 2048);
+        $response = implode($response);
+        $response = substr($response, 16);
+        $response = explode("\0", $response);
+        array_pop($response);
+        array_pop($response);
+
+        $result = [];
+        for ($i = 0; $i < 27; $i++) {
+            if ($i % 2) {
+                $result[$response[$i - 1]] = $response[$i];
+            }
+        }
+        $result['players'] = array_slice($response, 27);
+
+        return $result;
     }
 }
-
-/*
- * from: https://github.com/jasonwynn10/libpmquery
- */
-function query(string $host, int $port, int $timeout = 4) : bool|array{
-    $socket = @fsockopen('udp://'.$host, $port, $errno, $errstr, $timeout);
-    if($errno) {
-        fclose($socket);
-        if (DEBUG > 0) {
-            echo $errstr . " " . $errno;
-        }
-        return false;
-    } else if($socket === false) {
-        if (DEBUG > 0) {
-            echo $errstr . " " . $errno;
-        }
-        return false;
-    }
-    stream_Set_Timeout($socket, $timeout);
-    stream_Set_Blocking($socket, true);
-    $OFFLINE_MESSAGE_DATA_ID = \pack('c*', 0x00, 0xFF, 0xFF, 0x00, 0xFE, 0xFE, 0xFE, 0xFE, 0xFD, 0xFD, 0xFD, 0xFD, 0x12, 0x34, 0x56, 0x78);
-    $command = \pack('cQ', 0x01, time());
-    $command .= $OFFLINE_MESSAGE_DATA_ID;
-    $command .= \pack('Q', 2);
-    $length = \strlen($command);
-    if($length !== fwrite($socket, $command, $length)) {
-        if (DEBUG > 0) {
-            echo "Failed to write on socket. " . E_WARNING;
-        }
-        return false;
-    }
-    $data = fread($socket, 4096);
-    fclose($socket);
-    if(empty($data) or $data === false) {
-        if (DEBUG > 0) {
-            echo "Server failed to respond " . E_WARNING;
-        }
-        return false;
-    }
-    if(substr($data, 0, 1) !== "\x1C") {
-        if (DEBUG > 0) {
-            echo "First byte is not ID_UNCONNECTED_PONG. " . E_WARNING;
-        }
-        return false;
-    }
-    if(substr($data, 17, 16) !== $OFFLINE_MESSAGE_DATA_ID) {
-        if (DEBUG > 0) {
-            echo "Magic bytes do not match.";
-        }
-        return false;
-    }
-    $data = \substr($data, 35);
-    $data = \explode(';', $data);
-    //plugins are somewhere in here, but I have no idea how to read it :/
-    return [
-        'GameName' => $data[0],
-        'MOTD' => $data[1],
-        'Protocol' => $data[2],
-        'Version' => $data[3],
-        'Players' => $data[4],
-        'MaxPlayers' => $data[5],
-        'Unknown2' => $data[6], // TODO: What is this?
-        'Software' => $data[7],
-        'GameMode' => $data[8],
-        'Unknown3' => $data[9] // TODO: What is this?
-    ];
-}
-
-$address = readline('Adresse (127.0.0.1): ');
-if ($address == "") {
-    $address = "127.0.0.1";
-}
-
-$port = readline('Port (19132): ');
-if ($port == "") {
-    $port = 19132;
-}
-
-$timeout = readline('Timeout (4): ');
-if ($timeout == "") {
-    $timeout = 4;
-}
-
-echo "Starting to query server " . $address . ":" . $port . " with a time out of " . $timeout . " secondes ...\n";
-$result = query($address, $port, $timeout);
-if (!$result) {
-    echo "No server found\n";
-    exit(0);
-}
-
-foreach ($result as $key => $item) {
-    echo $key . ": " . $item . "\n";
-}
-exit(0);
