@@ -32,6 +32,12 @@ echo "Starting to query server " . $address . ":" . $port . " at date " . date("
 $thread = new CustomThread(0, $address, $port);
 $thread->start();
 $thread->join();
+
+if (!$thread->result) {
+    echo "Unable to query server " . $address . ":" . $port . " at date " . date("Y-m-d H:i:s") . " timezone " . date_default_timezone_get() . "...\n";
+    exit(1);
+}
+
 $result = new QueryInfo(json_decode($thread->result, true));
 
 $results = [
